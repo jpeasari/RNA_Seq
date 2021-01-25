@@ -7,4 +7,4 @@ featureCounts    -T 10 \
                  -g Parent  \ 
                  -a ../../Data/raw/GCF_000146045.2_R64_genomic.gtf   \
                  -o ../../Data/feature_counts/feature_count.txt  \
-                 ../star_align/*bam
+                 ../../Data/raw/star_align/*bam
