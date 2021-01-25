@@ -5,6 +5,6 @@ cd ../../Data/feature_counts
 featureCounts    -T 10 \
                  -t exon  \  
                  -g Parent  \ 
-                 -a ../../Data/raw/R64_genomic_gff.gtf   \
+                 -a ../../Data/raw/GCF_000146045.2_R64_genomic.gtf   \
                  -o ../../Data/feature_counts/feature_count.txt  \
                  ../star_align/*bam
