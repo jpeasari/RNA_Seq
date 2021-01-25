@@ -7,7 +7,7 @@ out = ${i}
 do
   STAR --runMode alignReads \
         --runThreadN 20 \
-        --genomeDir star_index \
+        --genomeDir ../../Data/star_index \
         --outSAMtype BAM  SortedByCoordinate \
         --outSAMunmapped Within  \
         --outSAMattributes Standard \
