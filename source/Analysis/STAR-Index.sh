@@ -3,7 +3,7 @@
 mkdir -p ../../genome_index
 cd ../../genome_index
 
-STAR	 --runThreadN 12  \
+STAR	--runThreadN 12  \
        --runMode genomeGenerate \
        --genomeDir genome_index \
        --genomeFastaFiles ../../Data/raw/GCF_000146045.2_R64_genomic.fna \
