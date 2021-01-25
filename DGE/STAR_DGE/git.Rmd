@@ -1,0 +1,116 @@
+---
+title: "STAR_DGE"
+author: "John Reddy Peasari"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+working directory
+```{r}
+setwd("D:/Spring 2020/BI-2/Labs/RNA_seq_HW/Counts_ncbi")
+```
+
+read in count matrix
+```{r}
+countData <- read.csv("counts.txt", header=T, row.names=1, sep="\t") 
+dim(countData)
+head(countData) 
+nrow(countData)
+par("mar")
+par(mar=c(3,3,3,3))
+```
+
+basic QC
+```{r}
+barplot(colSums(countData)*1e-6,mes=colnames(countData),ylab="Library size (millions)")
+
+```
+
+load library
+```{r include=FALSE}
+library(DESeq2)
+```
+
+create experiment labels (two conditions)
+```{r}
+colData <- DataFrame(condition=factor(c("WT_NR","WT_NR","WT_CR", "WT_CR")))
+colData
+```
+
+create DESeq input matrix
+```{r}
+dds <- DESeqDataSetFromMatrix(countData, colData, formula(~ condition))
+```
+
+run DEseq
+```{r}
+dds <- DESeq(dds)
+```
+
+visualize differentially expressed genes
+```{r}
+plotMA(dds,main = "Calorie Non-restricted vs Calorie-restricted")
+```
+
+get differentially expressed genes
+```{r}
+res <- results(dds)
+res
+```
+
+```{r}
+summary(res)
+```
+
+order by BH adjusted p-value
+```{r}
+resOrdered <- res[order(res$padj),]
+```
+
+top of ordered matrix
+```{r}
+head(resOrdered)
+```
+
+
+how many differentially expressed genes ? FDR=10%, |fold-change|>2 (up and down)
+get differentially expressed gene matrix
+```{r}
+
+sig <- resOrdered[!is.na(resOrdered$padj) &
+                    resOrdered$padj<0.10 &
+                    abs(resOrdered$log2FoldChange)>=1,]
+```
+
+
+top 50 of the differentially expressed genes
+```{r}
+data <- data.frame(sig)
+write.csv(data,"gene_list_ncbi.csv") ## Writing DE genes to a csv file
+genes <- read.csv("gene_list_ncbi.csv") ## Reading csv file
+head(genes$X,n=50)
+#head(genes$Gene.Name, n = 50) ### Getting top 50 DE genes
+```
+
+Dispersion plot
+```{r}
+plotDispEsts( dds, ylim = c(1e-6, 1e1) )
+rld <- rlog( dds )
+rld
+```
+
+the call to DESeqTransform() is needed to trigger our plotPCA method
+```{r}
+library("RColorBrewer")
+hmcol <- colorRampPalette(brewer.pal(9, "GnBu"))(100) ## hmcol <- heat.colors
+
+se <- SummarizedExperiment(log2(counts(dds, normalized=TRUE) + 1),
+                           colData=colData(dds))
+plotPCA( DESeqTransform( se ) )
+```
+
+
