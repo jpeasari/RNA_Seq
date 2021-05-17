@@ -1,0 +1,344 @@
+---
+title: "Deseq2_Task09"
+author: "John Reddy Peasari"
+date: "4/27/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Setting the current working directory
+
+```{r}
+dir <- getwd()
+setwd(dir)
+```
+
+# Loading required packages
+
+```{r include=FALSE}
+library(DESeq2)
+library(magrittr) 
+library(dplyr)
+library(tibble)
+library(kableExtra)
+library(EnhancedVolcano)
+library(genefilter)
+library(pheatmap)
+library(gplots)
+library(RColorBrewer)
+library(reshape2)
+```
+
+
+# Loading the expression data and the meta data
+
+```{r}
+gene_count <- read.csv("../Task09-Transcriptomic_Analysis/mayo.path_aging.con.salmon.gene.counts.csv",row.names = NULL)
+un <- gene_count[!duplicated(gene_count$X),] ## Removing the records that contain same row names
+write.csv(un,"gene_count_unique_trail.csv", row.names = FALSE) ## Saving it to a new csv file
+```
+
+```{r}
+gene_count_unique <- read.csv("gene_count_unique_trail.csv",row.names = 1) ## Loading the refined csv count and meta data file
+phenotype <- read.csv("../Task09-Transcriptomic_Analysis/mayo.path_aging.con.phenotype.csv")
+
+### Converting Diagnosis, AgeAtDeath, and Sex to a factor values for the Deseq2
+phenotype$Diagnosis <- as.factor(phenotype$Diagnosis)
+phenotype$AgeAtDeath <- as.factor(phenotype$AgeAtDeath)
+phenotype$Sex <- as.factor(phenotype$Sex)
+
+head(gene_count_unique)[1:6] ## Displaying the head of count file
+head(phenotype) ## Displaying the head of count file
+
+```
+
+
+### Checking if number of rows in the meta-data equals number of columns in the count data
+### For the deseq2 to run, it should be true
+
+```{r}
+ncol(gene_count_unique)
+nrow(phenotype)
+```
+
+# Design formula
+
+## It is an important analysis to do to identify the major sources of variation in the dataset. One can control those variances inside the dese2 model statistics using the design formula. It was evident from the task9 instructions that the major covariate or major varaition was " Diagnosis ". Howerever, we are controlling the other covariates or varations such as " Sex " and " AgeAtDeath ". We are looking for the gene expression difference between the "Diagnosis" levels. Therefore, we are looking for genes that are diffeentially expressed according to the " Diagnosis" factor. 
+
+### Create a DeSeqDataSet by specifying the gene expression count values datafame, meta-data dataframe and the design formula.
+
+```{r}
+dds <- DESeqDataSetFromMatrix(round(gene_count_unique), phenotype, formula(~ Sex + AgeAtDeath + Diagnosis))
+```
+
+```{r}
+assay(dds)[1:3,1:2] ## Displaying first 3 rows and 3 columns of the DESeqDaset count
+```
+
+```{r}
+colData(dds)[1:3,1:5] ## Displaying first 3 rows and 3 columns 
+```
+
+## Looking for the levels in each factor of the meta-data file
+```{r}
+dds$Diagnosis
+```
+
+## Here, deseq2 assumes the the first factor in the levels as a refrence level or it uses chronological order. So our refrence level was Control 
+```{r}
+dds$Sex
+```
+
+```{r}
+dds$AgeAtDeath
+```
+
+
+```{r}
+dds <- DESeq(dds)
+```
+
+```{r}
+resultsNames(dds)
+```
+
+```{r}
+results <- results(dds)
+summary(results)
+```
+### Summary above provides information about the percentage of genes (both Up and Down regulated) that are differentially expressed. It was observed that around 4% genes i.e., 1730 genes are up regulated and around 7% genes are down regulated.
+
+
+### We can examine the counts and normalized counts for a single gene with the smallest p value. Showing the most significant gene in all the samples
+#### contrast() was used to get results for all the possible combnations for a condition.
+```{r}
+res = results(dds, contrast=c("Diagnosis","Pathologic_Aging","Control"))
+write.table(res, file = "washu.csv", sep = ",",row.names = TRUE, col.names = NA) ## Writing DEGs to a new file
+
+ix = which.min(res$padj) # most significant
+res <- res[order(res$padj),] # sort
+head(res)
+kable(res[1:5,-(3:4)])
+barplot(assay(dds)[ix,],las=2, main=rownames(dds)[ ix  ]) ## Barplot of the most significant gene
+
+res1 = results(dds, contrast=c("Diagnosis","Pathologic_Aging","Control")) ## Creating another copy
+
+```
+
+
+## Extracting the table of differential genes
+
+```{r}
+diff_genes = res %>% 
+  as.data.frame() %>% 
+  rownames_to_column("genes")
+head(diff_genes)
+```
+
+
+# MA and dispersion plot 
+
+```{r}
+plotMA(dds, alpha = 0.05,main=paste0('Diagnosis: Pathologic_Aging vs Control'))
+topGene <- rownames(res)[which.min(res$padj)]
+with(res[topGene, ], {
+  points(baseMean, log2FoldChange, col="red", cex=2, lwd=2)
+  text(baseMean, log2FoldChange, topGene, pos=2, col="red")
+})
+```
+
+### In the MA plot each datapoint represents a gene.In the above MA plot, highlighted points in blue are the genes whcih has an adjusted p-values less then 0.05. MA plots provides informations about the relationship between the expression chage between the conditions.All the genes that successfully pass the significance threshold are coloured in blue.Points will be coloured red if the adjusted p_value is less than 0.05. The x-axis is the average expression values between all the samples and the y-axis is the log2 fold change of the normalized counts between Pathologic_Aging and the Control. The top most differentially expressed gene was labelled and circled in a red colour.
+
+```{r}
+plotDispEsts(dds, ylim = c(1e-6, 1e1))
+```
+
+### The above curve is used to visualize differentially expressed genes. Each dot each a gene with associated mean expression level.If you see a cloud or different shapes, then you might want to explore your data more to see if you have contamination or outlier samples. Note how much shrinkage you get across the whole range of means in the plotDispEsts() plot for any experiment with low degrees of freedom.
+
+
+# Data transformations
+
+```{r}
+ resLFC <- lfcShrink(dds = dds, 
+                  res = res1,
+                  type = "normal",
+                  coef = 2)
+```
+
+### Shrinkage of the effect size (LFC estimates) is used to visualize and rank the genes. We are here just shrinking the log2 fold change values to remove the noise associated with the fold change values that comes from genes with a low count values. We can build a volcano plot using the shrinkage values efficiently.
+
+```{r}
+rld <- rlog(dds, blind = FALSE)
+```
+
+### It was evident that the deseq2 already transforms the data initially, but for a other visualizaion plots one must still normalize the counta data. Extracting the rlog transformed values into an object called rld. The rlog transformation was estimated by fitting a general linear model (i.e., a GLM) to each gene for each sample. The rlog creates a matricx with an interncept and coefficient for each gene for each sample.
+
+```{r}
+vsd <- vst(dds, blind = FALSE)
+```
+
+### Variance stabilizaing transformation (VST)is much faster to rlog transforamtion. VST looks at the trend between variance and mean in the count data and tries to find a strict transforamtion fit to the data.
+
+# PCA plots
+## Sample-sample to distance is visualized by a PCA. 
+
+```{r}
+pca_diagnosis <- plotPCA(vsd, intgroup = c("Diagnosis"), returnData = TRUE)
+plotPCA(vsd, intgroup = c("Diagnosis"))
+```
+
+### In the PCA plot x-axis is the direction that seperates the data points most. The values of the samples written in this direction are termed as PC1 and the y-axis is the direction that seperates the data points second most. The values of these samples are written as PC2. The pecent variance was displayed on both the axis. By default the function uses top 500 most variable genes. The first dimension was seperating Pathologic_Aging samples from the Control samlples. It can be concluded that the once cannot expect the differences from this dataset. It looks there was not much variance observed between the conditions because the datapoints were not clustered. Instead, they are scattered apart from one another. The reason could be attributed to the imbalanced samples in Pathologic_Aging and the Control samples. It is also evident that the data doesn't contain outliers.
+
+```{r}
+pca_sex <- plotPCA(vsd, intgroup = c("Sex"), returnData = TRUE)
+plotPCA(vsd, intgroup = c("Diagnosis","Sex"))
+```
+
+## Conclusion: The same conclusion appears to this PCA from the first PCA plot. It looks like there isn't the signal that one might expecting from this dataset.
+
+# Heatmaps of the count matrix
+
+### Heatmap is a great visualization plot to analyze gene count values. These heatmaps are generated by transforming the data accross the samples.
+
+```{r}
+ntd <- normTransform(dds)
+select <- order(rowMeans(counts(dds,normalized=TRUE)),
+                decreasing=TRUE)[1:20]
+df <- as.data.frame(colData(dds)[,c("Diagnosis","Sex")])
+pheatmap(assay(ntd)[select,], cluster_rows=FALSE,
+         cluster_cols=FALSE, annotation_col=df)
+```
+
+### Conclusion: It was observed that the samples are clustered by the condition. However the patterns found were not that strong. Here, Diagnosis and Sex factors are labelled in colour. It was observed that at the top of the plot a few genes are seperating the Pathologic_Aging diagnosis from others. It was also evident that both diagnosis conditions not clusered into sex type and show little variation from each other.
+
+### Conclusion: The heatmap gives similarities and dissimilarities between the samples and the conditions. Good correlations were observed at the bottom of the heatmap for a few genes accross all the combinations of the design conditions. High expression was observed for the bottom two genes.
+
+
+## Getting all the gene names in a data frame for further use
+
+```{r}
+## Use the dataframe all_genes to get the names of the genes
+all_genes <- as.data.frame(diff_genes$genes)
+names(all_genes) <- c("gene")
+head(all_genes)
+```
+
+
+## Heatmap with user specifc gene list
+
+```{r}
+heatmap1 <- function(top_genes) {
+df <- as.data.frame(colData(dds)[,c("Diagnosis","Sex")])
+pheatmap(assay(vsd)[top_genes,], annotation_col=df,cluster_rows=FALSE,
+         cluster_cols=FALSE)
+}
+```
+
+
+### Here the user can specify a list of genes to plot as heatmap
+
+```{r}
+top_genes <- diff_genes$genes[1:10] ### Getting only top 10 DEG
+
+select_genes <- c("TMSB4XP8","SPCS2P4",'YBX1P10')  ## Make your own list of genes and call the function with that name
+
+heatmap1(top_genes) ## Calling the function with a list of genes names
+```
+
+### Conclusion: It was observed that the gene DYNLL2 highly expressed in the control condition than pathologic_aging condition. A high correlation score was observed for the gene DYNLL2 in both Diagnosis conditions accross the two gender types.
+
+
+
+## Using DESeq2 plotCounts() to plot expression of a single gene
+
+```{r}
+plot_single_gene <- function(name) {
+data <- plotCounts(dds, gene=name, intgroup="Diagnosis", returnData=TRUE)
+ggplot(data, aes(x = Diagnosis, y = count, color = Diagnosis)) + 
+  geom_point(position=position_jitter(w = 0.1,h = 0)) +
+  geom_text_repel(aes(label = rownames(data))) + 
+  #theme_bw() +
+  ggtitle(name) +
+  theme(plot.title = element_text(hjust = 0.5))
+}
+
+```
+
+
+## Change the name of your desired gene name to plot the expression plot for that specific gene
+
+### Plotting all the genes at once is very useful. However, one would like to visualize and analize gene expression changes for a specific gene of interest.
+
+```{r}
+topGene <- rownames(res)[which.min(res$padj)] ## To get the top gene name
+plot_single_gene("DYNLL2") ## Change the gene name here
+```
+
+
+### Conclusion: The count values were grouped by the Diagnosis factor.Looks like count are more in the control condition than the Pathologic_Aging, which was also evident about this gene from the above heatmap. Here, the user can select any gene of interest.
+
+
+# Valcano Plot
+### Most commonly used plot to get the gloval view of what's goind was through a valcano plot. 
+
+```{r}
+
+diff_genes <- diff_genes %>% 
+                  mutate(threshold_OE = padj < 0.05 & abs(log2FoldChange) >= 0.58)
+head(diff_genes)
+
+# diff_genes <- diff_genes %>% arrange(padj) %>% mutate(genelabels = "")
+# diff_genes$genelabels[1:10] <- diff_genes$genes[1:10]
+```
+
+
+```{r}
+
+volcano_plot <- function(data) {
+  
+  ggplot(data,aes(x=log2FoldChange, y=-log10(padj))) +
+        geom_point(aes(colour=threshold_OE)) +
+        geom_text_repel(aes(label=genelabels)) + 
+        ggtitle("Volcano Plot") +  
+        xlab("log2 fold change") + 
+        ylab("-log10 adjusted p-value") + 
+        xlim(-10,10) +
+        theme(legend.position = "none",
+              plot.title = element_text(size = rel(1.5), hjust = 0.5),
+              axis.title = element_text(size = rel(1.25)))
+  }
+
+
+
+```
+
+## Here, choose your oown gene names to display on the volcano plot.
+
+### To generate a valcano plot, we need a column to tell whether or not a particular gene is differentially expressed based on the adjusted p-value. In order to do that, obtain logical vector where TRUE values denote padj values < 0.05 and fold change > 1.5 vice versa. Once can aslo locate top 20 DE genes on the volcano plot but just having a column names genelabels that corresponds to whether that gene is significant or not.
+
+```{r}
+diff_genes_copy <- diff_genes
+diff_genes_copy <- diff_genes %>% arrange(padj) %>% mutate(genelabels = "")
+# diff_genes_copy$genelabels[1:10] <- diff_genes_copy$genes[1:10]  ## or once can add their own gene names from a list 
+
+diff_genes_copy$genelabels[1:2] <- c("TMSB4XP8","DYNLL2") ## Make sure you use only one type to choose gene names
+head(diff_genes_copy)
+volcano_plot(diff_genes_copy) ## Passing two gene names to the function to generate volcano plot
+```
+
+### Conslusion: It was evident from the above volcano plot that the TMSB4XP8 gene was the top most differentially expressed genes. Genes on left are down regulated and genes to the right are up regulated and genes coloured in red colour are not signficant genes.
+
+
+
+```{r}
+
+```
+
+
+
+
+
+
